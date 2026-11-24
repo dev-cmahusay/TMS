@@ -1,0 +1,35 @@
+{
+  "name": "tms",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "prepare": "svelte-kit sync || echo ''",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.4",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@sveltejs/adapter-cloudflare": "^7.0.0",
+    "@sveltejs/kit": "^2.20.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/node": "^22.14.0",
+    "svelte": "^5.25.0",
+    "svelte-check": "^4.1.5",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.5",
+    "vitest": "^3.1.1",
+    "wrangler": "^4.6.0"
+  }
+}

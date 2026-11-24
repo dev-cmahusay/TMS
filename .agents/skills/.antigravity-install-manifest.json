@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-24T08:21:25.854Z",
+  "entries": [
+    "e2e-testing",
+    "frontend-lighthouse",
+    "playwright-skill",
+    "pre-release-review",
+    "production-audit",
+    "secrets-management",
+    "skill-audit",
+    "supabase-postgres-best-practices",
+    "sveltekit",
+    "tailwind-patterns"
+  ]
+}
