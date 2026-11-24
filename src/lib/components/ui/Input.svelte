@@ -11,6 +11,7 @@
 		required = false,
 		invalid = false,
 		disabled = false,
+		minlength,
 		maxlength,
 		'aria-label': ariaLabel,
 		'aria-describedby': ariaDescribedby,
@@ -27,6 +28,7 @@
 		required?: boolean;
 		invalid?: boolean;
 		disabled?: boolean;
+		minlength?: number;
 		maxlength?: number;
 		'aria-label'?: string;
 		'aria-describedby'?: string;
@@ -45,6 +47,7 @@
 	{autocomplete}
 	{required}
 	{disabled}
+	{minlength}
 	{maxlength}
 	aria-label={ariaLabel}
 	aria-invalid={invalid || undefined}

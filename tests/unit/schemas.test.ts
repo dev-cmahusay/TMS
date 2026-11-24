@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { categoryNameSchema } from '../../src/lib/schemas/category';
 import { noteSchema, replySchema } from '../../src/lib/schemas/message';
-import { profileUpdateSchema } from '../../src/lib/schemas/profile';
+import { createStaffSchema, profileUpdateSchema } from '../../src/lib/schemas/profile';
 import { publicTicketSchema } from '../../src/lib/schemas/ticket';
 
 describe('publicTicketSchema', () => {
@@ -86,5 +86,63 @@ describe('staff schemas', () => {
 			profileUpdateSchema.safeParse({ full_name: 'Ana Cruz', role: 'admin', is_active: true })
 				.success
 		).toBe(true);
+	});
+
+	it('validates createStaffSchema inputs and normalizes email', () => {
+		const ok = createStaffSchema.safeParse({
+			full_name: ' Juan Dela Cruz ',
+			email: ' Juan.Agent@School.Edu.PH ',
+			password: 'TempPassword123',
+			role: 'agent'
+		});
+		expect(ok.success).toBe(true);
+		if (ok.success) {
+			expect(ok.data.full_name).toBe('Juan Dela Cruz');
+			expect(ok.data.email).toBe('juan.agent@school.edu.ph');
+			expect(ok.data.role).toBe('agent');
+		}
+
+		const defaultRole = createStaffSchema.safeParse({
+			full_name: 'Ana Reyes',
+			email: 'ana@school.edu.ph',
+			password: 'TempPassword123'
+		});
+		expect(defaultRole.success).toBe(true);
+		if (defaultRole.success) expect(defaultRole.data.role).toBe('agent');
+
+		const shortPw = createStaffSchema.safeParse({
+			full_name: 'Ana Reyes',
+			email: 'ana@school.edu.ph',
+			password: 'short',
+			role: 'agent'
+		});
+		expect(shortPw.success).toBe(false);
+		if (!shortPw.success) {
+			expect(shortPw.error.issues[0]?.message).toBe('Password must be at least 8 characters.');
+		}
+
+		const badEmail = createStaffSchema.safeParse({
+			full_name: 'Ana Reyes',
+			email: 'not-an-email',
+			password: 'TempPassword123',
+			role: 'agent'
+		});
+		expect(badEmail.success).toBe(false);
+
+		const badRole = createStaffSchema.safeParse({
+			full_name: 'Ana Reyes',
+			email: 'ana@school.edu.ph',
+			password: 'TempPassword123',
+			role: 'superadmin'
+		});
+		expect(badRole.success).toBe(false);
+
+		const crlfName = createStaffSchema.safeParse({
+			full_name: 'Ana\nReyes',
+			email: 'ana@school.edu.ph',
+			password: 'TempPassword123',
+			role: 'agent'
+		});
+		expect(crlfName.success).toBe(false);
 	});
 });

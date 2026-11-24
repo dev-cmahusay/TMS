@@ -13,7 +13,7 @@ Free-tier deployment, staff administration, monitoring, and backup procedures fo
    ```bash
    npx supabase login
    npx supabase link --project-ref <your-project-ref>
-   npx supabase db push
+   npx supabase db push --remote
    ```
 4. Seed initial school categories by running `supabase/seed.sql` in the SQL Editor (idempotent).
 
@@ -63,7 +63,7 @@ Free-tier deployment, staff administration, monitoring, and backup procedures fo
 
 ## 3. Day-to-Day Staff Admin
 
-- **Add a new staff member:** Supabase Dashboard → Authentication → Users → Add user (Auto Confirm ON). They automatically appear under `/app/admin/team` as `agent`.
+- **Add a new staff member:** Sign in as an admin → `/app/admin/team` → **Add staff member** (creates a confirmed login immediately as `agent` or `admin`).
 - **Reset a forgotten password:** Supabase Dashboard → Authentication → Users → select user → Send password recovery or set temporary password.
 - **Disable a departed staff member:** `/app/admin/team` → set Access to **Disabled** → Save. Their next request immediately ends their session. Never delete the auth user (preserves ticket history).
 

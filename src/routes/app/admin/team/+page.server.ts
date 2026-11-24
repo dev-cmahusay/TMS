@@ -1,5 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
-import { profileUpdateSchema } from '$lib/schemas/profile';
+import { createStaffSchema, profileUpdateSchema } from '$lib/schemas/profile';
 import { logError } from '$lib/server/log';
 import { getSupabaseAdmin } from '$lib/server/supabase-admin';
 import type { UserRole } from '$lib/ui/status';
@@ -11,6 +11,23 @@ export interface TeamMember {
 	email: string | null;
 	role: UserRole;
 	is_active: boolean;
+}
+
+async function requireAdmin(locals: App.Locals) {
+	const { user } = await locals.safeGetSession();
+	if (!user) error(401, 'Sign in required.');
+
+	const { data: caller } = await locals.supabase
+		.from('profiles')
+		.select('id, role, is_active')
+		.eq('id', user.id)
+		.single();
+
+	if (!caller || !caller.is_active || caller.role !== 'admin') {
+		error(403, "You don't have access to this page.");
+	}
+
+	return caller;
 }
 
 export const load: PageServerLoad = async ({ locals, parent }) => {
@@ -48,19 +65,97 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 };
 
 export const actions: Actions = {
-	update: async ({ request, locals }) => {
-		const { user } = await locals.safeGetSession();
-		if (!user) error(401, 'Sign in required.');
+	create: async ({ request, locals }) => {
+		await requireAdmin(locals);
 
-		const { data: caller } = await locals.supabase
-			.from('profiles')
-			.select('id, role, is_active')
-			.eq('id', user.id)
-			.single();
+		const formData = await request.formData();
+		const rawFullName = String(formData.get('full_name') ?? '');
+		const rawEmail = String(formData.get('email') ?? '');
+		const rawPassword = String(formData.get('password') ?? '');
+		const rawRole = String(formData.get('role') ?? 'agent');
 
-		if (!caller || !caller.is_active || caller.role !== 'admin') {
-			error(403, "You don't have access to this page.");
+		const createValues = {
+			full_name: rawFullName,
+			email: rawEmail,
+			role: rawRole === 'admin' ? 'admin' : 'agent'
+		};
+
+		const parsed = createStaffSchema.safeParse({
+			full_name: rawFullName,
+			email: rawEmail,
+			password: rawPassword,
+			role: rawRole
+		});
+
+		if (!parsed.success) {
+			return fail(400, {
+				createError: parsed.error.issues[0]?.message ?? 'Please check the staff details.',
+				createValues
+			});
 		}
+
+		try {
+			const admin = getSupabaseAdmin();
+			const { data: created, error: createErr } = await admin.auth.admin.createUser({
+				email: parsed.data.email,
+				password: parsed.data.password,
+				email_confirm: true,
+				user_metadata: {
+					full_name: parsed.data.full_name
+				}
+			});
+
+			if (createErr || !created.user) {
+				const msg = createErr?.message?.toLowerCase() ?? '';
+				if (msg.includes('already') || msg.includes('registered') || createErr?.status === 422) {
+					return fail(409, {
+						createError: 'An account with this email already exists.',
+						createValues
+					});
+				}
+				logError('admin.team.create', createErr ?? new Error('Missing created user'));
+				return fail(500, {
+					createError: 'Could not create staff account. Please try again.',
+					createValues
+				});
+			}
+
+			const { error: profileErr } = await admin
+				.from('profiles')
+				.upsert(
+					{
+						id: created.user.id,
+						full_name: parsed.data.full_name,
+						role: parsed.data.role,
+						is_active: true
+					},
+					{ onConflict: 'id' }
+				);
+
+			if (profileErr) {
+				logError('admin.team.create-profile', profileErr);
+				return fail(500, {
+					createError:
+						'Account was created, but setting the staff profile failed. Refresh and update their details below.'
+				});
+			}
+
+			return {
+				created: true,
+				createdEmail: parsed.data.email,
+				createdName: parsed.data.full_name
+			};
+		} catch (err) {
+			logError('admin.team.create', err);
+			return fail(500, {
+				createError: 'Could not create staff account. Please try again.',
+				createValues
+			});
+		}
+	},
+
+	update: async ({ request, locals }) => {
+		const caller = await requireAdmin(locals);
 
 		const formData = await request.formData();
 		const targetId = String(formData.get('id') ?? '');
