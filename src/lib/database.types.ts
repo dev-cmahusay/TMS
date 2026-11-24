@@ -16,6 +16,18 @@ export type TicketStatus =
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type UserRole = 'agent' | 'admin';
 export type EmailStatus = 'pending' | 'sent' | 'failed';
+export type AuditAction =
+	| 'ticket.assigned'
+	| 'ticket.reassigned'
+	| 'ticket.unassigned'
+	| 'ticket.status_changed'
+	| 'ticket.priority_changed'
+	| 'ticket.reopened'
+	| 'staff.created'
+	| 'staff.updated'
+	| 'category.created'
+	| 'category.updated';
+export type AuditEntityType = 'ticket' | 'profile' | 'category';
 
 export interface DashboardAgentStat {
 	agent_id: string | null;
@@ -251,6 +263,53 @@ export type Database = {
 					count?: number;
 				};
 				Relationships: [];
+			};
+			audit_logs: {
+				Row: {
+					id: string;
+					actor_id: string | null;
+					actor_name: string;
+					action: AuditAction;
+					entity_type: AuditEntityType;
+					entity_id: string;
+					entity_label: string;
+					summary: string;
+					metadata: Json;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					actor_id?: string | null;
+					actor_name: string;
+					action: AuditAction;
+					entity_type: AuditEntityType;
+					entity_id: string;
+					entity_label: string;
+					summary: string;
+					metadata?: Json;
+					created_at?: string;
+				};
+				Update: {
+					id?: never;
+					actor_id?: never;
+					actor_name?: never;
+					action?: never;
+					entity_type?: never;
+					entity_id?: never;
+					entity_label?: never;
+					summary?: never;
+					metadata?: never;
+					created_at?: never;
+				};
+				Relationships: [
+					{
+						foreignKeyName: 'audit_logs_actor_id_fkey';
+						columns: ['actor_id'];
+						isOneToOne: false;
+						referencedRelation: 'profiles';
+						referencedColumns: ['id'];
+					}
+				];
 			};
 		};
 		Views: Record<string, never>;

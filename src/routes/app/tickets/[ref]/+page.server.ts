@@ -1,8 +1,14 @@
 import { error, fail } from '@sveltejs/kit';
-import type { EmailStatus } from '$lib/database.types';
+import {
+	buildAssignmentAudit,
+	buildPriorityAuditSummary,
+	buildStatusAuditSummary
+} from '$lib/audit/format';
+import type { AuditAction, EmailStatus } from '$lib/database.types';
 import { noteSchema, replySchema } from '$lib/schemas/message';
 import { ticketUpdateSchema } from '$lib/schemas/ticket-update';
 import { ATTACHMENTS_BUCKET } from '$lib/server/attachments';
+import { recordAuditLogs, type AuditEntryInput } from '$lib/server/audit';
 import { sendNotificationEmail } from '$lib/server/email/send';
 import {
 	buildReplyEmail,
@@ -11,17 +17,18 @@ import {
 } from '$lib/server/email/templates';
 import { logError } from '$lib/server/log';
 import { getSupabaseAdmin } from '$lib/server/supabase-admin';
-import { resolveTicketUpdate } from '$lib/tickets/transitions';
-import type { TicketPriority, TicketStatus } from '$lib/ui/status';
+import { canAssignTarget, resolveTicketUpdate } from '$lib/tickets/transitions';
+import type { TicketPriority, TicketStatus, UserRole } from '$lib/ui/status';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals, params }) => {
+export const load: PageServerLoad = async ({ locals, params, parent }) => {
+	const { profile: viewer } = await parent();
 	const ref = params.ref.toUpperCase();
 
 	const { data: ticket, error: ticketErr } = await locals.supabase
 		.from('tickets')
 		.select(
-			'id, ref, customer_name, customer_email, customer_phone, category_id, description, status, priority, assignee_id, created_at, updated_at, resolved_at, categories(name), profiles!tickets_assignee_id_fkey(id, full_name, is_active)'
+			'id, ref, customer_name, customer_email, customer_phone, category_id, description, status, priority, assignee_id, created_at, updated_at, resolved_at, categories(name), profiles!tickets_assignee_id_fkey(id, full_name, role, is_active)'
 		)
 		.eq('ref', ref)
 		.single();
@@ -30,23 +37,30 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		error(404, 'Ticket not found.');
 	}
 
-	const [{ data: messages }, { data: attachmentRows }, { data: staffRows }] = await Promise.all([
-		locals.supabase
-			.from('ticket_messages')
-			.select('id, author_id, body, is_internal, email_status, created_at, profiles(full_name)')
-			.eq('ticket_id', ticket.id)
-			.order('created_at', { ascending: true }),
-		locals.supabase
-			.from('ticket_attachments')
-			.select('id, storage_path, mime_type, size_bytes, created_at')
-			.eq('ticket_id', ticket.id)
-			.order('created_at', { ascending: true }),
-		locals.supabase
-			.from('profiles')
-			.select('id, full_name, is_active')
-			.eq('is_active', true)
-			.order('full_name', { ascending: true })
-	]);
+	const [{ data: messages }, { data: attachmentRows }, { data: staffRows }, { data: auditRows }] =
+		await Promise.all([
+			locals.supabase
+				.from('ticket_messages')
+				.select('id, author_id, body, is_internal, email_status, created_at, profiles(full_name)')
+				.eq('ticket_id', ticket.id)
+				.order('created_at', { ascending: true }),
+			locals.supabase
+				.from('ticket_attachments')
+				.select('id, storage_path, mime_type, size_bytes, created_at')
+				.eq('ticket_id', ticket.id)
+				.order('created_at', { ascending: true }),
+			locals.supabase
+				.from('profiles')
+				.select('id, full_name, role, is_active')
+				.eq('is_active', true)
+				.order('full_name', { ascending: true }),
+			locals.supabase
+				.from('audit_logs')
+				.select('id, actor_name, action, summary, created_at')
+				.eq('entity_type', 'ticket')
+				.eq('entity_id', ticket.id)
+				.order('created_at', { ascending: true })
+		]);
 
 	const paths = (attachmentRows ?? []).map((a) => a.storage_path);
 	const signedUrlMap = new Map<string, string>();
@@ -71,10 +85,20 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const assignee = ticket.profiles as unknown as {
 		id: string;
 		full_name: string;
+		role: UserRole;
 		is_active: boolean;
 	} | null;
 
+	const assignableStaff = (staffRows ?? [])
+		.filter((s) => viewer.role === 'admin' || s.role !== 'admin')
+		.map((s) => ({
+			id: s.id,
+			full_name: s.full_name,
+			role: s.role as UserRole
+		}));
+
 	return {
+		viewerRole: viewer.role as UserRole,
 		ticket: {
 			id: ticket.id,
 			ref: ticket.ref,
@@ -87,6 +111,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 			priority: ticket.priority as TicketPriority,
 			assignee_id: ticket.assignee_id,
 			assignee_name: assignee?.full_name ?? null,
+			assignee_role: assignee?.role ?? null,
 			assignee_inactive: assignee ? !assignee.is_active : false,
 			created_at: ticket.created_at,
 			updated_at: ticket.updated_at,
@@ -104,16 +129,20 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 				created_at: m.created_at
 			};
 		}),
+		auditEvents: (auditRows ?? []).map((a) => ({
+			id: a.id,
+			actor_name: a.actor_name,
+			action: a.action as AuditAction,
+			summary: a.summary,
+			created_at: a.created_at
+		})),
 		attachments: (attachmentRows ?? []).map((a) => ({
 			id: a.id,
 			mime_type: a.mime_type,
 			size_bytes: a.size_bytes,
 			url: signedUrlMap.get(a.storage_path) ?? null
 		})),
-		activeStaff: (staffRows ?? []).map((s) => ({
-			id: s.id,
-			full_name: s.full_name
-		}))
+		activeStaff: assignableStaff
 	};
 };
 
@@ -152,7 +181,9 @@ export const actions: Actions = {
 
 		const { data: current, error: fetchErr } = await locals.supabase
 			.from('tickets')
-			.select('id, ref, customer_name, customer_email, status, priority, assignee_id, updated_at')
+			.select(
+				'id, ref, customer_name, customer_email, status, priority, assignee_id, updated_at, profiles!tickets_assignee_id_fkey(id, full_name, role)'
+			)
 			.eq('ref', ref)
 			.single();
 
@@ -171,6 +202,43 @@ export const actions: Actions = {
 
 		if (!resolution.ok) {
 			return fail(400, { updateError: resolution.error });
+		}
+
+		const prevAssignee = current.profiles as unknown as {
+			id: string;
+			full_name: string;
+			role: UserRole;
+		} | null;
+
+		let nextAssigneeName: string | null = prevAssignee?.full_name ?? null;
+
+		if (resolution.assigneeId !== current.assignee_id) {
+			if (resolution.assigneeId === null) {
+				nextAssigneeName = null;
+			} else {
+				const { data: targetProfile } = await locals.supabase
+					.from('profiles')
+					.select('id, full_name, role, is_active')
+					.eq('id', resolution.assigneeId)
+					.single();
+
+				if (!targetProfile || !targetProfile.is_active) {
+					return fail(400, { updateError: 'Selected assignee is not an active staff member.' });
+				}
+
+				const assignGuard = canAssignTarget({
+					actorRole: profile.role as UserRole,
+					currentAssigneeId: current.assignee_id,
+					targetAssigneeId: targetProfile.id,
+					targetAssigneeRole: targetProfile.role as UserRole
+				});
+
+				if (!assignGuard.ok) {
+					return fail(403, { updateError: assignGuard.error });
+				}
+
+				nextAssigneeName = targetProfile.full_name;
+			}
 		}
 
 		const { data: updated, error: updateErr } = await locals.supabase
@@ -196,6 +264,82 @@ export const actions: Actions = {
 				updateError: 'This ticket was changed by someone else. Reload to see the latest version.'
 			});
 		}
+
+		// Record immutable audit trail entries
+		const auditEntries: AuditEntryInput[] = [];
+
+		if (resolution.assigneeId !== current.assignee_id) {
+			const assignmentAudit = buildAssignmentAudit({
+				actorName: profile.full_name,
+				ticketRef: current.ref,
+				fromName: prevAssignee?.full_name ?? null,
+				toName: nextAssigneeName
+			});
+			if (assignmentAudit) {
+				auditEntries.push({
+					actorId: profile.id,
+					actorName: profile.full_name,
+					action: assignmentAudit.action,
+					entityType: 'ticket',
+					entityId: current.id,
+					entityLabel: current.ref,
+					summary: assignmentAudit.summary,
+					metadata: {
+						ticket_ref: current.ref,
+						from_assignee_id: current.assignee_id,
+						from_assignee_name: prevAssignee?.full_name ?? null,
+						to_assignee_id: resolution.assigneeId,
+						to_assignee_name: nextAssigneeName
+					}
+				});
+			}
+		}
+
+		if (resolution.status !== current.status) {
+			auditEntries.push({
+				actorId: profile.id,
+				actorName: profile.full_name,
+				action: 'ticket.status_changed',
+				entityType: 'ticket',
+				entityId: current.id,
+				entityLabel: current.ref,
+				summary: buildStatusAuditSummary({
+					actorName: profile.full_name,
+					ticketRef: current.ref,
+					fromStatus: current.status as TicketStatus,
+					toStatus: resolution.status
+				}),
+				metadata: {
+					ticket_ref: current.ref,
+					from_status: current.status,
+					to_status: resolution.status
+				}
+			});
+		}
+
+		if (parsed.data.priority !== current.priority) {
+			auditEntries.push({
+				actorId: profile.id,
+				actorName: profile.full_name,
+				action: 'ticket.priority_changed',
+				entityType: 'ticket',
+				entityId: current.id,
+				entityLabel: current.ref,
+				summary: buildPriorityAuditSummary({
+					actorName: profile.full_name,
+					ticketRef: current.ref,
+					fromPriority: current.priority as TicketPriority,
+					toPriority: parsed.data.priority
+				}),
+				metadata: {
+					ticket_ref: current.ref,
+					from_priority: current.priority,
+					to_priority: parsed.data.priority
+				}
+			});
+		}
+
+		await recordAuditLogs(locals.supabase, auditEntries);
 
 		const enteringWaiting =
 			resolution.status === 'waiting_on_customer' && current.status !== 'waiting_on_customer';
@@ -295,6 +439,40 @@ export const actions: Actions = {
 				updateError: 'This ticket was changed by someone else. Reload to see the latest version.'
 			});
 		}
+
+		const reopenEntries: AuditEntryInput[] = [
+			{
+				actorId: profile.id,
+				actorName: profile.full_name,
+				action: 'ticket.reopened',
+				entityType: 'ticket',
+				entityId: current.id,
+				entityLabel: current.ref,
+				summary: `${profile.full_name} reopened ${current.ref}`,
+				metadata: { ticket_ref: current.ref }
+			}
+		];
+
+		if (current.assignee_id === null) {
+			reopenEntries.push({
+				actorId: profile.id,
+				actorName: profile.full_name,
+				action: 'ticket.assigned',
+				entityType: 'ticket',
+				entityId: current.id,
+				entityLabel: current.ref,
+				summary: `${profile.full_name} assigned ${current.ref} to ${profile.full_name}`,
+				metadata: {
+					ticket_ref: current.ref,
+					from_assignee_id: null,
+					from_assignee_name: null,
+					to_assignee_id: profile.id,
+					to_assignee_name: profile.full_name
+				}
+			});
+		}
+
+		await recordAuditLogs(locals.supabase, reopenEntries);
 
 		return { reopened: true };
 	},

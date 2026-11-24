@@ -1,5 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import { createStaffSchema, profileUpdateSchema } from '$lib/schemas/profile';
+import { recordAuditLogs } from '$lib/server/audit';
 import { logError } from '$lib/server/log';
 import { getSupabaseAdmin } from '$lib/server/supabase-admin';
 import type { UserRole } from '$lib/ui/status';
@@ -19,7 +20,7 @@ async function requireAdmin(locals: App.Locals) {
 
 	const { data: caller } = await locals.supabase
 		.from('profiles')
-		.select('id, role, is_active')
+		.select('id, full_name, role, is_active')
 		.eq('id', user.id)
 		.single();
 
@@ -66,7 +67,7 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 
 export const actions: Actions = {
 	create: async ({ request, locals }) => {
-		await requireAdmin(locals);
+		const caller = await requireAdmin(locals);
 
 		const formData = await request.formData();
 		const rawFullName = String(formData.get('full_name') ?? '');
@@ -140,6 +141,24 @@ export const actions: Actions = {
 				});
 			}
 
+			await recordAuditLogs(locals.supabase, [
+				{
+					actorId: caller.id,
+					actorName: caller.full_name,
+					action: 'staff.created',
+					entityType: 'profile',
+					entityId: created.user.id,
+					entityLabel: parsed.data.full_name,
+					summary: `${caller.full_name} created ${parsed.data.role === 'admin' ? 'Admin' : 'Agent'} account for ${parsed.data.full_name} (${parsed.data.email})`,
+					metadata: {
+						target_id: created.user.id,
+						target_name: parsed.data.full_name,
+						target_email: parsed.data.email,
+						role: parsed.data.role
+					}
+				}
+			]);
+
 			return {
 				created: true,
 				createdEmail: parsed.data.email,
@@ -201,6 +220,24 @@ export const actions: Actions = {
 			logError('admin.team.update', updateErr);
 			return fail(500, { teamError: 'Could not update staff member. Please try again.' });
 		}
+
+		await recordAuditLogs(locals.supabase, [
+			{
+				actorId: caller.id,
+				actorName: caller.full_name,
+				action: 'staff.updated',
+				entityType: 'profile',
+				entityId: targetId,
+				entityLabel: parsed.data.full_name,
+				summary: `${caller.full_name} updated ${parsed.data.full_name} (role: ${parsed.data.role === 'admin' ? 'Admin' : 'Agent'}, access: ${parsed.data.is_active ? 'Active' : 'Disabled'})`,
+				metadata: {
+					target_id: targetId,
+					target_name: parsed.data.full_name,
+					role: parsed.data.role,
+					is_active: parsed.data.is_active
+				}
+			}
+		]);
 
 		return { saved: true };
 	}

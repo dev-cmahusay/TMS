@@ -1,5 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import { categoryNameSchema } from '$lib/schemas/category';
+import { recordAuditLogs } from '$lib/server/audit';
 import { logError } from '$lib/server/log';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -23,7 +24,7 @@ async function requireAdmin(locals: App.Locals) {
 	if (!user) error(401, 'Sign in required.');
 	const { data: profile } = await locals.supabase
 		.from('profiles')
-		.select('id, role, is_active')
+		.select('id, full_name, role, is_active')
 		.eq('id', user.id)
 		.single();
 	if (!profile || !profile.is_active || profile.role !== 'admin') {
@@ -34,7 +35,7 @@ async function requireAdmin(locals: App.Locals) {
 
 export const actions: Actions = {
 	create: async ({ request, locals }) => {
-		await requireAdmin(locals);
+		const caller = await requireAdmin(locals);
 		const formData = await request.formData();
 		const parsed = categoryNameSchema.safeParse({ name: String(formData.get('name') ?? '') });
 
@@ -52,11 +53,15 @@ export const actions: Actions = {
 
 		const nextOrder = (existing?.[0]?.sort_order ?? 0) + 10;
 
-		const { error: insertErr } = await locals.supabase.from('categories').insert({
-			name: parsed.data.name,
-			sort_order: nextOrder,
-			is_active: true
-		});
+		const { data: inserted, error: insertErr } = await locals.supabase
+			.from('categories')
+			.insert({
+				name: parsed.data.name,
+				sort_order: nextOrder,
+				is_active: true
+			})
+			.select('id, name')
+			.single();
 
 		if (insertErr) {
 			if (insertErr.code === '23505') {
@@ -66,11 +71,26 @@ export const actions: Actions = {
 			return fail(500, { createError: 'Could not add category. Please try again.' });
 		}
 
+		if (inserted) {
+			await recordAuditLogs(locals.supabase, [
+				{
+					actorId: caller.id,
+					actorName: caller.full_name,
+					action: 'category.created',
+					entityType: 'category',
+					entityId: String(inserted.id),
+					entityLabel: inserted.name,
+					summary: `${caller.full_name} created category "${inserted.name}"`,
+					metadata: { category_id: inserted.id, name: inserted.name }
+				}
+			]);
+		}
+
 		return { created: true };
 	},
 
 	rename: async ({ request, locals }) => {
-		await requireAdmin(locals);
+		const caller = await requireAdmin(locals);
 		const formData = await request.formData();
 		const id = Number.parseInt(String(formData.get('id') ?? ''), 10);
 		const parsed = categoryNameSchema.safeParse({ name: String(formData.get('name') ?? '') });
@@ -96,6 +116,19 @@ export const actions: Actions = {
 			logError('admin.categories.rename', updateErr);
 			return fail(500, { actionError: 'Could not rename category. Please try again.' });
 		}
+
+		await recordAuditLogs(locals.supabase, [
+			{
+				actorId: caller.id,
+				actorName: caller.full_name,
+				action: 'category.updated',
+				entityType: 'category',
+				entityId: String(id),
+				entityLabel: parsed.data.name,
+				summary: `${caller.full_name} renamed category to "${parsed.data.name}"`,
+				metadata: { category_id: id, name: parsed.data.name }
+			}
+		]);
 
 		return { renamed: true };
 	},
@@ -142,7 +175,7 @@ export const actions: Actions = {
 	},
 
 	toggle: async ({ request, locals }) => {
-		await requireAdmin(locals);
+		const caller = await requireAdmin(locals);
 		const formData = await request.formData();
 		const id = Number.parseInt(String(formData.get('id') ?? ''), 10);
 		const nextActive = String(formData.get('next_active') ?? '') === 'true';
@@ -163,10 +196,12 @@ export const actions: Actions = {
 			}
 		}
 
-		const { error: updateErr } = await locals.supabase
+		const { data: toggled, error: updateErr } = await locals.supabase
 			.from('categories')
 			.update({ is_active: nextActive })
-			.eq('id', id);
+			.eq('id', id)
+			.select('id, name')
+			.single();
 
 		if (updateErr) {
 			if (updateErr.message.includes('Keep at least one active category')) {
@@ -174,6 +209,21 @@ export const actions: Actions = {
 			}
 			logError('admin.categories.toggle', updateErr);
 			return fail(500, { actionError: 'Could not update category. Please try again.' });
+		}
+
+		if (toggled) {
+			await recordAuditLogs(locals.supabase, [
+				{
+					actorId: caller.id,
+					actorName: caller.full_name,
+					action: 'category.updated',
+					entityType: 'category',
+					entityId: String(toggled.id),
+					entityLabel: toggled.name,
+					summary: `${caller.full_name} ${nextActive ? 'activated' : 'deactivated'} category "${toggled.name}"`,
+					metadata: { category_id: toggled.id, is_active: nextActive }
+				}
+			]);
 		}
 
 		return { toggled: true };

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { getAuditActionMeta } from '$lib/audit/format';
 	import Alert from '$lib/components/ui/Alert.svelte';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -64,6 +65,33 @@
 		selectedStatus === 'resolved' && data.ticket.status !== 'resolved'
 	);
 	const isResolved = $derived(data.ticket.status === 'resolved');
+
+	const currentAssigneeMissingFromList = $derived(
+		Boolean(
+			data.ticket.assignee_id &&
+				data.ticket.assignee_name &&
+				!data.activeStaff.some((s) => s.id === data.ticket.assignee_id)
+		)
+	);
+
+	type TimelineItem =
+		| { kind: 'message'; created_at: string; msg: PageData['messages'][number] }
+		| { kind: 'audit'; created_at: string; event: PageData['auditEvents'][number] };
+
+	const timeline = $derived<TimelineItem[]>(
+		[
+			...data.messages.map((msg) => ({
+				kind: 'message' as const,
+				created_at: msg.created_at,
+				msg
+			})),
+			...data.auditEvents.map((event) => ({
+				kind: 'audit' as const,
+				created_at: event.created_at,
+				event
+			}))
+		].sort((a, b) => a.created_at.localeCompare(b.created_at))
+	);
 </script>
 
 <svelte:head>
@@ -184,8 +212,22 @@
 		<section aria-label="Ticket activity" class="space-y-3">
 			<h2 class="text-sm font-semibold uppercase tracking-wide text-muted">Activity</h2>
 
-			{#each data.messages as msg}
-				{#if msg.author_id === null}
+			{#each timeline as item}
+				{#if item.kind === 'audit'}
+					{@const auditMeta = getAuditActionMeta(item.event.action)}
+					<div
+						class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface-subtle px-4 py-2.5 text-xs text-muted"
+					>
+						<div class="flex flex-wrap items-center gap-2">
+							<Badge variant={auditMeta.variant}>{auditMeta.label}</Badge>
+							<span class="text-text">{item.event.summary}</span>
+						</div>
+						<time datetime={item.event.created_at} class="font-mono tabular-nums">
+							{formatManilaDateTime(item.event.created_at)}
+						</time>
+					</div>
+				{:else if item.msg.author_id === null}
+					{@const msg = item.msg}
 					<div
 						class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface-subtle px-4 py-2.5 text-xs text-muted"
 					>
@@ -201,7 +243,8 @@
 							</time>
 						</div>
 					</div>
-				{:else if msg.is_internal}
+				{:else if item.msg.is_internal}
+					{@const msg = item.msg}
 					<article class="rounded-lg border border-dashed border-border-strong bg-note-bg p-4">
 						<div class="flex flex-wrap items-center justify-between gap-2">
 							<div class="flex flex-wrap items-center gap-2">
@@ -218,6 +261,7 @@
 						<p class="mt-3 whitespace-pre-wrap break-words text-sm text-text">{msg.body}</p>
 					</article>
 				{:else}
+					{@const msg = item.msg}
 					<article class="rounded-lg border border-border bg-surface p-4 shadow-sm">
 						<div class="flex flex-wrap items-center justify-between gap-2">
 							<div class="flex flex-wrap items-center gap-2">
@@ -375,9 +419,13 @@
 							aria-describedby={describedBy}
 						>
 							<option value="">Unassigned</option>
-							{#if data.ticket.assignee_inactive && data.ticket.assignee_id && data.ticket.assignee_name}
+							{#if currentAssigneeMissingFromList && data.ticket.assignee_id && data.ticket.assignee_name}
 								<option value={data.ticket.assignee_id}>
-									{data.ticket.assignee_name} (inactive)
+									{data.ticket.assignee_name}{data.ticket.assignee_inactive
+										? ' (inactive)'
+										: data.ticket.assignee_role === 'admin'
+											? ' (Admin)'
+											: ''}
 								</option>
 							{/if}
 							{#each data.activeStaff as staff}
