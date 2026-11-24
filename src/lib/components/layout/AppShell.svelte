@@ -104,7 +104,9 @@
 	</div>
 
 	<!-- Desktop left sidebar (>= lg) -->
-	<aside class="hidden w-56 shrink-0 border-r border-border bg-surface lg:flex lg:flex-col lg:justify-between lg:p-4">
+	<aside
+		class="hidden w-56 shrink-0 border-r border-border bg-surface lg:sticky lg:top-0 lg:flex lg:h-screen lg:self-start lg:flex-col lg:justify-between lg:overflow-y-auto lg:p-4"
+	>
 		<div class="space-y-6">
 			<a
 				href="/app"
