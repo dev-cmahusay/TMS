@@ -108,64 +108,77 @@ describe('ticket status transition matrix', () => {
 describe('canAssignTarget role guard', () => {
 	it('blocks an agent from assigning a ticket to an admin', () => {
 		const res = canAssignTarget({
+			actorId: 'agent-1',
 			actorRole: 'agent',
 			currentAssigneeId: null,
-			targetAssigneeId: 'admin-1',
-			targetAssigneeRole: 'admin'
+			targetAssigneeId: 'admin-1'
 		});
 		expect(res).toEqual({
 			ok: false,
-			error: 'Agents cannot assign tickets to administrators.'
+			error: 'Agents can only assign tickets to themselves.'
 		});
 	});
 
-	it('blocks an agent from reassigning from an agent to an admin', () => {
+	it('blocks an agent from assigning a ticket to another agent', () => {
 		const res = canAssignTarget({
+			actorId: 'agent-1',
 			actorRole: 'agent',
-			currentAssigneeId: 'agent-1',
-			targetAssigneeId: 'admin-1',
-			targetAssigneeRole: 'admin'
+			currentAssigneeId: null,
+			targetAssigneeId: 'agent-2'
 		});
-		expect(res.ok).toBe(false);
+		expect(res).toEqual({
+			ok: false,
+			error: 'Agents can only assign tickets to themselves.'
+		});
 	});
 
-	it('allows an agent to keep an already-assigned admin untouched when editing other fields', () => {
+	it('allows an agent to assign a ticket to themselves', () => {
 		const res = canAssignTarget({
+			actorId: 'agent-1',
 			actorRole: 'agent',
-			currentAssigneeId: 'admin-1',
-			targetAssigneeId: 'admin-1',
-			targetAssigneeRole: 'admin'
+			currentAssigneeId: null,
+			targetAssigneeId: 'agent-1'
 		});
 		expect(res).toEqual({ ok: true });
 	});
 
-	it('allows an agent to assign another agent or unassign', () => {
-		expect(
-			canAssignTarget({
-				actorRole: 'agent',
-				currentAssigneeId: null,
-				targetAssigneeId: 'agent-2',
-				targetAssigneeRole: 'agent'
-			})
-		).toEqual({ ok: true });
+	it('allows an agent to keep an already-assigned owner untouched when editing other fields', () => {
+		const res = canAssignTarget({
+			actorId: 'agent-1',
+			actorRole: 'agent',
+			currentAssigneeId: 'admin-1',
+			targetAssigneeId: 'admin-1'
+		});
+		expect(res).toEqual({ ok: true });
+	});
 
+	it('allows an agent to unassign a ticket', () => {
 		expect(
 			canAssignTarget({
+				actorId: 'agent-1',
 				actorRole: 'agent',
-				currentAssigneeId: 'admin-1',
-				targetAssigneeId: null,
-				targetAssigneeRole: null
+				currentAssigneeId: 'agent-1',
+				targetAssigneeId: null
 			})
 		).toEqual({ ok: true });
 	});
 
-	it('allows an admin to assign anyone including admins', () => {
+	it('allows an admin to assign anyone including agents and admins', () => {
 		expect(
 			canAssignTarget({
+				actorId: 'admin-1',
 				actorRole: 'admin',
 				currentAssigneeId: null,
-				targetAssigneeId: 'admin-2',
-				targetAssigneeRole: 'admin'
+				targetAssigneeId: 'agent-2'
+			})
+		).toEqual({ ok: true });
+
+		expect(
+			canAssignTarget({
+				actorId: 'admin-1',
+				actorRole: 'admin',
+				currentAssigneeId: null,
+				targetAssigneeId: 'admin-2'
 			})
 		).toEqual({ ok: true });
 	});

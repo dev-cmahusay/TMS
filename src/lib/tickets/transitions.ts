@@ -1,29 +1,29 @@
 import { getStatusLabel, type TicketStatus, type UserRole } from '$lib/ui/status';
 
 export interface CanAssignTargetInput {
+	actorId: string;
 	actorRole: UserRole;
 	currentAssigneeId: string | null;
 	targetAssigneeId: string | null;
-	targetAssigneeRole: UserRole | null;
 }
 
 export type CanAssignTargetResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Agents may assign tickets to other agents or unassign,
- * but cannot assign (or reassign) a ticket to an administrator.
- * Keeping an already-assigned admin untouched while editing status/priority is allowed.
+ * Agents may assign tickets only to themselves (or unassign),
+ * never to another agent or an administrator.
+ * Keeping an already-assigned owner untouched while editing status/priority is allowed.
  */
 export function canAssignTarget(input: CanAssignTargetInput): CanAssignTargetResult {
-	const { actorRole, currentAssigneeId, targetAssigneeId, targetAssigneeRole } = input;
+	const { actorId, actorRole, currentAssigneeId, targetAssigneeId } = input;
 
 	if (
 		actorRole === 'agent' &&
 		targetAssigneeId !== null &&
 		targetAssigneeId !== currentAssigneeId &&
-		targetAssigneeRole === 'admin'
+		targetAssigneeId !== actorId
 	) {
-		return { ok: false, error: 'Agents cannot assign tickets to administrators.' };
+		return { ok: false, error: 'Agents can only assign tickets to themselves.' };
 	}
 
 	return { ok: true };

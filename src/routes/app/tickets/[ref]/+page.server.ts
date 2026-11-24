@@ -90,7 +90,7 @@ export const load: PageServerLoad = async ({ locals, params, parent }) => {
 	} | null;
 
 	const assignableStaff = (staffRows ?? [])
-		.filter((s) => viewer.role === 'admin' || s.role !== 'admin')
+		.filter((s) => viewer.role === 'admin' || s.id === viewer.id)
 		.map((s) => ({
 			id: s.id,
 			full_name: s.full_name,
@@ -227,10 +227,10 @@ export const actions: Actions = {
 				}
 
 				const assignGuard = canAssignTarget({
+					actorId: profile.id,
 					actorRole: profile.role as UserRole,
 					currentAssigneeId: current.assignee_id,
-					targetAssigneeId: targetProfile.id,
-					targetAssigneeRole: targetProfile.role as UserRole
+					targetAssigneeId: targetProfile.id
 				});
 
 				if (!assignGuard.ok) {
