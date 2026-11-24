@@ -6,3 +6,14 @@ compatibility_flags = ["nodejs_compat"]
 [assets]
 binding = "ASSETS"
 directory = ".svelte-kit/cloudflare"
+
+[vars]
+EMAIL_FROM = "helpdesk@school.edu.ph"
+EMAIL_MODE = "log"
+PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_GdCRoag_KblIGfVnNxj4qA_wvSbETZC"
+PUBLIC_SUPABASE_URL = "https://sesquyqenpbvsveqaewj.supabase.co"
+PUBLIC_TURNSTILE_SITE_KEY = "0x4AAAAAAGQwQhPhy3_6w7AQ"
+RATE_LIMIT_EMAIL_PER_HOUR = "5"
+RATE_LIMIT_IP_PER_HOUR = "20"
+SUPPORT_INBOX_EMAIL = "dev.cmahusay@gmail.com"
+
