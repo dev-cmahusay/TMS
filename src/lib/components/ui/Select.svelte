@@ -9,6 +9,7 @@
 		required = false,
 		invalid = false,
 		disabled = false,
+		'aria-label': ariaLabel,
 		'aria-describedby': ariaDescribedby,
 		class: className = '',
 		onchange,
@@ -20,6 +21,7 @@
 		required?: boolean;
 		invalid?: boolean;
 		disabled?: boolean;
+		'aria-label'?: string;
 		'aria-describedby'?: string;
 		class?: string;
 		onchange?: HTMLSelectAttributes['onchange'];
@@ -33,6 +35,7 @@
 	bind:value
 	{required}
 	{disabled}
+	aria-label={ariaLabel}
 	aria-invalid={invalid || undefined}
 	aria-describedby={ariaDescribedby}
 	{onchange}

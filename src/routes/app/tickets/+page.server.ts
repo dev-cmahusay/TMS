@@ -38,18 +38,35 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
 
 	if (filters.mine) {
 		query = query.eq('assignee_id', profile.id);
+	} else if (filters.assignee === 'unassigned') {
+		query = query.is('assignee_id', null);
+	} else if (filters.assignee) {
+		query = query.eq('assignee_id', filters.assignee);
 	}
 
-	// Count query per status (respects mine toggle when active)
+	// Count query per status (respects mine / assignee filter when active)
 	let countQuery = locals.supabase.from('tickets').select('status');
 	if (filters.mine) {
 		countQuery = countQuery.eq('assignee_id', profile.id);
+	} else if (filters.assignee === 'unassigned') {
+		countQuery = countQuery.is('assignee_id', null);
+	} else if (filters.assignee) {
+		countQuery = countQuery.eq('assignee_id', filters.assignee);
 	}
 
-	const [{ data: rows, count: totalFiltered }, { data: allStatuses }] = await Promise.all([
-		query,
-		countQuery
-	]);
+	const [{ data: rows, count: totalFiltered }, { data: allStatuses }, assigneeRow] =
+		await Promise.all([
+			query,
+			countQuery,
+			filters.assignee && filters.assignee !== 'unassigned'
+				? locals.supabase.from('profiles').select('full_name').eq('id', filters.assignee).single()
+				: Promise.resolve({ data: null })
+		]);
+
+	const assigneeFilterLabel =
+		filters.assignee === 'unassigned'
+			? 'Unassigned'
+			: (assigneeRow.data?.full_name ?? null);
 
 	const counts: Record<'open' | 'all' | TicketStatus, number> = {
 		open: 0,
@@ -92,6 +109,7 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
 		tickets,
 		counts,
 		filters,
+		assigneeFilterLabel,
 		pagination: {
 			total,
 			page: filters.page,

@@ -15,13 +15,15 @@ const EMPTY_STATS: DashboardStats = {
 	per_agent: []
 };
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, parent }) => {
+	const { profile } = await parent();
 	const { data, error } = await locals.supabase.rpc('dashboard_stats');
 	if (error || !data) {
 		if (error) logError('dashboard.stats', error);
-		return { stats: EMPTY_STATS };
+		return { stats: EMPTY_STATS, isAdmin: profile.role === 'admin' };
 	}
 	return {
-		stats: data as unknown as DashboardStats
+		stats: data as unknown as DashboardStats,
+		isAdmin: profile.role === 'admin'
 	};
 };

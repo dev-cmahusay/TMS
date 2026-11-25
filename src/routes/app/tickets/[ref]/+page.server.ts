@@ -213,6 +213,17 @@ export const actions: Actions = {
 		let nextAssigneeName: string | null = prevAssignee?.full_name ?? null;
 
 		if (resolution.assigneeId !== current.assignee_id) {
+			const assignGuard = canAssignTarget({
+				actorId: profile.id,
+				actorRole: profile.role as UserRole,
+				currentAssigneeId: current.assignee_id,
+				targetAssigneeId: resolution.assigneeId
+			});
+
+			if (!assignGuard.ok) {
+				return fail(403, { updateError: assignGuard.error });
+			}
+
 			if (resolution.assigneeId === null) {
 				nextAssigneeName = null;
 			} else {
@@ -224,17 +235,6 @@ export const actions: Actions = {
 
 				if (!targetProfile || !targetProfile.is_active) {
 					return fail(400, { updateError: 'Selected assignee is not an active staff member.' });
-				}
-
-				const assignGuard = canAssignTarget({
-					actorId: profile.id,
-					actorRole: profile.role as UserRole,
-					currentAssigneeId: current.assignee_id,
-					targetAssigneeId: targetProfile.id
-				});
-
-				if (!assignGuard.ok) {
-					return fail(403, { updateError: assignGuard.error });
 				}
 
 				nextAssigneeName = targetProfile.full_name;

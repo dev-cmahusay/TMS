@@ -10,20 +10,20 @@ export interface CanAssignTargetInput {
 export type CanAssignTargetResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Agents may assign tickets only to themselves (or unassign),
- * never to another agent or an administrator.
- * Keeping an already-assigned owner untouched while editing status/priority is allowed.
+ * Only administrators can reassign or unassign an already-assigned ticket,
+ * or assign tickets to other staff members.
+ * Agents keep the assignee read-only (can only auto-claim an unassigned ticket by working on it).
  */
 export function canAssignTarget(input: CanAssignTargetInput): CanAssignTargetResult {
 	const { actorId, actorRole, currentAssigneeId, targetAssigneeId } = input;
 
-	if (
-		actorRole === 'agent' &&
-		targetAssigneeId !== null &&
-		targetAssigneeId !== currentAssigneeId &&
-		targetAssigneeId !== actorId
-	) {
-		return { ok: false, error: 'Agents can only assign tickets to themselves.' };
+	if (actorRole === 'agent') {
+		if (currentAssigneeId !== null && targetAssigneeId !== currentAssigneeId) {
+			return { ok: false, error: 'Only administrators can reassign or unassign a ticket.' };
+		}
+		if (currentAssigneeId === null && targetAssigneeId !== null && targetAssigneeId !== actorId) {
+			return { ok: false, error: 'Only administrators can assign tickets to other staff.' };
+		}
 	}
 
 	return { ok: true };

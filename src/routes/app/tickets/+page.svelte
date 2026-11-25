@@ -20,10 +20,19 @@
 		{ key: 'all', label: 'All' }
 	];
 
-	function buildHref(nextStatus: TicketFilterStatus, nextMine: boolean, nextPage = 1): string {
+	function buildHref(
+		nextStatus: TicketFilterStatus,
+		nextMine: boolean,
+		nextPage = 1,
+		nextAssignee: string | null = data.filters.assignee
+	): string {
 		const params = new URLSearchParams();
 		params.set('status', nextStatus);
-		if (nextMine) params.set('mine', '1');
+		if (nextMine) {
+			params.set('mine', '1');
+		} else if (nextAssignee) {
+			params.set('assignee', nextAssignee);
+		}
 		if (nextPage > 1) params.set('page', String(nextPage));
 		return `/app/tickets?${params.toString()}`;
 	}
@@ -42,16 +51,27 @@
 
 <PageHeader title="Tickets">
 	{#snippet actions()}
-		<a
-			href={buildHref(data.filters.status, !data.filters.mine, 1)}
-			aria-current={data.filters.mine ? 'true' : undefined}
-			class="inline-flex min-h-11 items-center rounded-md border px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring {data
-				.filters.mine
-				? 'border-primary bg-primary text-primary-fg'
-				: 'border-border-strong bg-surface text-text hover:bg-surface-subtle'}"
-		>
-			Mine
-		</a>
+		<div class="flex flex-wrap items-center gap-2">
+			{#if data.assigneeFilterLabel}
+				<a
+					href={buildHref(data.filters.status, false, 1, null)}
+					class="inline-flex min-h-11 items-center gap-2 rounded-md border border-border-strong bg-surface-subtle px-3 text-sm text-text hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+				>
+					<span>Assignee: <strong>{data.assigneeFilterLabel}</strong></span>
+					<span class="text-xs text-muted">×</span>
+				</a>
+			{/if}
+			<a
+				href={buildHref(data.filters.status, !data.filters.mine, 1, null)}
+				aria-current={data.filters.mine ? 'true' : undefined}
+				class="inline-flex min-h-11 items-center rounded-md border px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring {data
+					.filters.mine
+					? 'border-primary bg-primary text-primary-fg'
+					: 'border-border-strong bg-surface text-text hover:bg-surface-subtle'}"
+			>
+				Mine
+			</a>
+		</div>
 	{/snippet}
 </PageHeader>
 
@@ -78,7 +98,7 @@
 	{#if data.tickets.length === 0}
 		<Card class="text-center">
 			<p class="text-sm text-muted">No tickets here yet.</p>
-			{#if data.filters.mine || data.filters.status !== 'open'}
+			{#if data.filters.mine || data.filters.assignee || data.filters.status !== 'open'}
 				<div class="mt-3">
 					<Button href="/app/tickets" variant="secondary" size="sm">Show all open tickets</Button>
 				</div>

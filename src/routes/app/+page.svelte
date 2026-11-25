@@ -68,8 +68,13 @@
 	</section>
 
 	<Card padding="none">
-		<div class="border-b border-border px-4 py-3 lg:px-6">
+		<div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3 lg:px-6">
 			<h2 class="text-base font-semibold text-text">Tickets per agent</h2>
+			{#if data.isAdmin}
+				<Button href="/app/admin/workload" size="sm" variant="secondary">
+					Manage workload
+				</Button>
+			{/if}
 		</div>
 
 		{#if stats.per_agent.length === 0}
@@ -85,8 +90,15 @@
 				{/snippet}
 				{#snippet body()}
 					{#each stats.per_agent as row}
-						<tr>
-							<td class="px-4 py-3 font-medium text-text lg:px-6">{row.agent_name}</td>
+						<tr class="hover:bg-surface-subtle">
+							<td class="px-4 py-3 font-medium text-text lg:px-6">
+								<a
+									href="/app/tickets?status=open&assignee={row.agent_id ?? 'unassigned'}"
+									class="text-primary hover:underline"
+								>
+									{row.agent_name}
+								</a>
+							</td>
 							<td class="px-4 py-3 text-right font-mono text-text tabular-nums lg:px-6">
 								{row.open_count}
 							</td>

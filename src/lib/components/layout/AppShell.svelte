@@ -34,6 +34,7 @@
 	];
 
 	const adminNav: NavItem[] = [
+		{ href: '/app/admin/workload', label: 'Workload' },
 		{ href: '/app/admin/categories', label: 'Categories' },
 		{ href: '/app/admin/team', label: 'Team' },
 		{ href: '/app/admin/audit', label: 'Audit log' }

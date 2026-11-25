@@ -24,6 +24,7 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
+	let editingDetails = $state(false);
 	let selectedStatus = $state<TicketStatus>('new');
 	let selectedPriority = $state<TicketPriority>('normal');
 	let selectedAssignee = $state('');
@@ -37,10 +38,27 @@
 	let composerBody = $state('');
 	let submittingComposer = $state(false);
 
-	$effect(() => {
+	function startEditDetails() {
 		selectedStatus = data.ticket.status;
 		selectedPriority = data.ticket.priority;
 		selectedAssignee = data.ticket.assignee_id ?? '';
+		waitingReply = '';
+		resolutionNote = '';
+		editingDetails = true;
+	}
+
+	function cancelEditDetails() {
+		editingDetails = false;
+		waitingReply = '';
+		resolutionNote = '';
+	}
+
+	$effect(() => {
+		if (!editingDetails) {
+			selectedStatus = data.ticket.status;
+			selectedPriority = data.ticket.priority;
+			selectedAssignee = data.ticket.assignee_id ?? '';
+		}
 	});
 
 	$effect(() => {
@@ -54,10 +72,16 @@
 		if (form && 'updated' in form && form.updated) {
 			waitingReply = '';
 			resolutionNote = '';
+			editingDetails = false;
 		}
 	});
 
-	const statusOptions = $derived(allowedStatusOptions(data.ticket.status));
+	const isAdmin = $derived(data.viewerRole === 'admin');
+	const statusOptions = $derived(
+		allowedStatusOptions(data.ticket.status).filter(
+			(s) => isAdmin || data.ticket.assignee_id === null || s !== 'new'
+		)
+	);
 	const needsWaitingReply = $derived(
 		selectedStatus === 'waiting_on_customer' && data.ticket.status !== 'waiting_on_customer'
 	);
@@ -389,130 +413,195 @@
 	<!-- Right metadata sidebar -->
 	<aside class="w-full lg:w-80 lg:shrink-0">
 		<Card>
-			<h2 class="mb-4 text-base font-semibold text-text">Ticket details</h2>
+			<div class="mb-4 flex items-center justify-between gap-2">
+				<h2 class="text-base font-semibold text-text">Ticket details</h2>
+				{#if !editingDetails}
+					<Button type="button" size="sm" variant="secondary" onclick={startEditDetails}>
+						Edit
+					</Button>
+				{/if}
+			</div>
 
-			<form
-				method="POST"
-				action="?/update"
-				class="space-y-4"
-				use:enhance={() => {
-					savingMeta = true;
-					return async ({ update }) => {
-						await update();
-						savingMeta = false;
-					};
-				}}
-			>
-				<input type="hidden" name="expected_updated_at" value={data.ticket.updated_at} />
-
-				<Field
-					id="ticket-assignee"
-					label="Assignee"
-					hint={isResolved ? 'Reopen the ticket to change the assignee.' : undefined}
-				>
-					{#snippet children(describedBy)}
-						<Select
-							id="ticket-assignee"
-							name="assignee_id"
-							disabled={isResolved}
-							bind:value={selectedAssignee}
-							aria-describedby={describedBy}
-						>
-							<option value="">Unassigned</option>
-							{#if currentAssigneeMissingFromList && data.ticket.assignee_id && data.ticket.assignee_name}
-								<option value={data.ticket.assignee_id}>
-									{data.ticket.assignee_name}{data.ticket.assignee_inactive
-										? ' (inactive)'
-										: data.ticket.assignee_role === 'admin'
-											? ' (Admin)'
-											: ''}
-								</option>
+			{#if !editingDetails}
+				<dl class="space-y-3 text-sm">
+					<div class="flex items-center justify-between gap-3">
+						<dt class="text-muted">Assignee</dt>
+						<dd class="text-right font-medium text-text">
+							{#if data.ticket.assignee_name}
+								{data.ticket.assignee_name}{#if data.ticket.assignee_inactive}
+									<span class="text-xs font-normal text-muted"> (inactive)</span>
+								{/if}
+							{:else}
+								<span class="text-muted">Unassigned</span>
 							{/if}
-							{#each data.activeStaff as staff}
-								<option value={staff.id}>{staff.full_name}</option>
-							{/each}
-						</Select>
-					{/snippet}
-				</Field>
-				{#if isResolved && data.ticket.assignee_id}
-					<input type="hidden" name="assignee_id" value={data.ticket.assignee_id} />
-				{/if}
+						</dd>
+					</div>
 
-				<Field id="ticket-status" label="Status">
-					{#snippet children(describedBy)}
-						<Select
-							id="ticket-status"
-							name="status"
-							bind:value={selectedStatus}
-							aria-describedby={describedBy}
+					<div class="flex items-center justify-between gap-3">
+						<dt class="text-muted">Status</dt>
+						<dd>
+							<Badge status={data.ticket.status} />
+						</dd>
+					</div>
+
+					<div class="flex items-center justify-between gap-3">
+						<dt class="text-muted">Priority</dt>
+						<dd>
+							<Badge priority={data.ticket.priority} />
+						</dd>
+					</div>
+				</dl>
+			{:else}
+				<form
+					method="POST"
+					action="?/update"
+					class="space-y-4"
+					use:enhance={() => {
+						savingMeta = true;
+						return async ({ update }) => {
+							await update();
+							savingMeta = false;
+						};
+					}}
+				>
+					<input type="hidden" name="expected_updated_at" value={data.ticket.updated_at} />
+
+					{#if isAdmin}
+						<Field
+							id="ticket-assignee"
+							label="Assignee"
+							hint={isResolved ? 'Reopen the ticket to change the assignee.' : undefined}
 						>
-							{#each statusOptions as status}
-								<option value={status}>{getStatusLabel(status)}</option>
-							{/each}
-						</Select>
-					{/snippet}
-				</Field>
+							{#snippet children(describedBy)}
+								<Select
+									id="ticket-assignee"
+									name="assignee_id"
+									disabled={isResolved}
+									bind:value={selectedAssignee}
+									aria-describedby={describedBy}
+								>
+									<option value="">Unassigned</option>
+									{#if currentAssigneeMissingFromList && data.ticket.assignee_id && data.ticket.assignee_name}
+										<option value={data.ticket.assignee_id}>
+											{data.ticket.assignee_name}{data.ticket.assignee_inactive
+												? ' (inactive)'
+												: ''}
+										</option>
+									{/if}
+									{#each data.activeStaff as staff}
+										<option value={staff.id}>{staff.full_name}</option>
+									{/each}
+								</Select>
+							{/snippet}
+						</Field>
+						{#if isResolved && data.ticket.assignee_id}
+							<input type="hidden" name="assignee_id" value={data.ticket.assignee_id} />
+						{/if}
+					{:else}
+						<div>
+							<p class="mb-1 text-sm font-medium text-text">Assignee</p>
+							<div
+								class="flex min-h-11 items-center rounded-md border border-border bg-surface-subtle px-3 text-sm text-text"
+							>
+								{#if data.ticket.assignee_name}
+									{data.ticket.assignee_name}{#if data.ticket.assignee_inactive}
+										<span class="ml-1 text-xs text-muted">(inactive)</span>
+									{/if}
+								{:else}
+									<span class="text-muted">Unassigned</span>
+								{/if}
+							</div>
+							<p class="mt-1 text-xs text-muted">Only an admin can reassign tickets.</p>
+							<input type="hidden" name="assignee_id" value={data.ticket.assignee_id ?? ''} />
+						</div>
+					{/if}
 
-				{#if needsWaitingReply}
-					<Field
-						id="waiting-reply"
-						label="Reply to customer"
-						required
-						hint="Tell the customer what you need — this will be emailed."
-					>
+					<Field id="ticket-status" label="Status">
 						{#snippet children(describedBy)}
-							<Textarea
-								id="waiting-reply"
-								name="reply_body"
-								rows={3}
-								maxlength={5000}
-								required
-								bind:value={waitingReply}
+							<Select
+								id="ticket-status"
+								name="status"
+								bind:value={selectedStatus}
 								aria-describedby={describedBy}
-							/>
+							>
+								{#each statusOptions as status}
+									<option value={status}>{getStatusLabel(status)}</option>
+								{/each}
+							</Select>
 						{/snippet}
 					</Field>
-				{/if}
 
-				{#if enteringResolved}
-					<Field
-						id="resolution-note"
-						label="Resolution note to customer (optional)"
-						hint="Leave blank to send the default resolution email."
-					>
+					{#if needsWaitingReply}
+						<Field
+							id="waiting-reply"
+							label="Reply to customer"
+							required
+							hint="Tell the customer what you need — this will be emailed."
+						>
+							{#snippet children(describedBy)}
+								<Textarea
+									id="waiting-reply"
+									name="reply_body"
+									rows={3}
+									maxlength={5000}
+									required
+									bind:value={waitingReply}
+									aria-describedby={describedBy}
+								/>
+							{/snippet}
+						</Field>
+					{/if}
+
+					{#if enteringResolved}
+						<Field
+							id="resolution-note"
+							label="Resolution note to customer (optional)"
+							hint="Leave blank to send the default resolution email."
+						>
+							{#snippet children(describedBy)}
+								<Textarea
+									id="resolution-note"
+									name="resolution_note"
+									rows={3}
+									maxlength={5000}
+									bind:value={resolutionNote}
+									aria-describedby={describedBy}
+									placeholder="Your request has been marked as resolved. If the problem continues, reply to this email."
+								/>
+							{/snippet}
+						</Field>
+					{/if}
+
+					<Field id="ticket-priority" label="Priority">
 						{#snippet children(describedBy)}
-							<Textarea
-								id="resolution-note"
-								name="resolution_note"
-								rows={3}
-								maxlength={5000}
-								bind:value={resolutionNote}
+							<Select
+								id="ticket-priority"
+								name="priority"
+								bind:value={selectedPriority}
 								aria-describedby={describedBy}
-								placeholder="Your request has been marked as resolved. If the problem continues, reply to this email."
-							/>
+							>
+								{#each TICKET_PRIORITIES as p}
+									<option value={p}>{getPriorityLabel(p)}</option>
+								{/each}
+							</Select>
 						{/snippet}
 					</Field>
-				{/if}
 
-				<Field id="ticket-priority" label="Priority">
-					{#snippet children(describedBy)}
-						<Select
-							id="ticket-priority"
-							name="priority"
-							bind:value={selectedPriority}
-							aria-describedby={describedBy}
+					<div class="flex gap-2">
+						<Button type="submit" variant="primary" fullWidth loading={savingMeta}>
+							{savingMeta ? 'Saving…' : 'Save'}
+						</Button>
+						<Button
+							type="button"
+							variant="secondary"
+							disabled={savingMeta}
+							onclick={cancelEditDetails}
 						>
-							{#each TICKET_PRIORITIES as p}
-								<option value={p}>{getPriorityLabel(p)}</option>
-							{/each}
-						</Select>
-					{/snippet}
-				</Field>
-
-				<Button type="submit" variant="primary" fullWidth loading={savingMeta}>
-					{savingMeta ? 'Saving…' : 'Save'}
-				</Button>
-			</form>
+							Cancel
+						</Button>
+					</div>
+				</form>
+			{/if}
 
 			<dl class="mt-5 space-y-2 border-t border-border pt-4 text-xs">
 				<div class="flex justify-between gap-2">

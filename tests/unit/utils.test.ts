@@ -19,20 +19,30 @@ describe('utility helpers', () => {
 		expect(parseTicketFilters(new URLSearchParams())).toEqual({
 			status: 'open',
 			mine: false,
-			page: 1
-		});
-		expect(parseTicketFilters(new URLSearchParams('status=bogus&page=-2&mine=1'))).toEqual({
-			status: 'open',
-			mine: true,
+			assignee: null,
 			page: 1
 		});
 		expect(
-			parseTicketFilters(new URLSearchParams('status=waiting_on_customer&page=3'))
+			parseTicketFilters(new URLSearchParams('status=bogus&page=-2&mine=1&assignee=unassigned'))
+		).toEqual({
+			status: 'open',
+			mine: true,
+			assignee: null,
+			page: 1
+		});
+		expect(
+			parseTicketFilters(new URLSearchParams('status=waiting_on_customer&page=3&assignee=unassigned'))
 		).toEqual({
 			status: 'waiting_on_customer',
 			mine: false,
+			assignee: 'unassigned',
 			page: 3
 		});
+		const validUuid = '11111111-2222-3333-4444-555555555555';
+		expect(parseTicketFilters(new URLSearchParams(`assignee=${validUuid}`)).assignee).toBe(
+			validUuid
+		);
+		expect(parseTicketFilters(new URLSearchParams('assignee=not-a-uuid')).assignee).toBeNull();
 	});
 
 	it('masks email addresses', () => {
